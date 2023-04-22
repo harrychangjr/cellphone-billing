@@ -9,3 +9,5 @@ Methods explored:
 - Using logit and probit models on merged dataset (from 3 datasets)
 - Model estimations for duration models
 - Random forest classifier to predict churn
+
+Full project also available on https://rpubs.com/harrychangjr/cellphone
