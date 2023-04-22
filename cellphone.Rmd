@@ -1,0 +1,566 @@
+---
+title: "Cellphone Billing Project"
+author: "Harry Chang"
+date: "2023-04-22"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r}
+setwd("/Users/harrychang/Downloads/BT4211/Assignment/Assignment 2")
+```
+
+```{r}
+library(readxl)
+cellphone = read_excel("cellphone_billing_student.xlsx")
+subscriber = read_excel("subscriber_info_student.xlsx")
+zip = read_excel("zip_info_student.xlsx")
+```
+
+## Exploring the cellphone billing dataset
+
+```{r}
+cellphone
+```
+
+
+```{r}
+summary(cellphone)
+```
+
+### Descriptive statistics
+
+```{r}
+mean_total_minute_peak <- mean(cellphone$total_minute_peak)
+median_total_minute_peak <- median(cellphone$total_minute_peak)
+sd_total_minute_peak <- sd(cellphone$total_minute_peak)
+
+cat("Mean of total_minute_peak:", mean_total_minute_peak, "\n")
+cat("Median of total_minute_peak:", median_total_minute_peak, "\n")
+cat("Standard deviation of total_minute_peak:", sd_total_minute_peak, "\n")
+```
+
+```{r}
+customer_count <- nrow(cellphone)
+plan_proportions <- table(cellphone$plan_chosen) / customer_count
+cat("Proportions of customers in each plan:\n")
+print(plan_proportions)
+```
+
+```{r}
+library(ggplot2)
+ggplot(cellphone, aes(x = total_minute_peak)) +
+  geom_histogram(bins = 50, fill = "blue", alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Distribution of Total Peak Minutes", x = "Total Peak Minutes", y = "Count")
+```
+
+### Churn analysis
+
+```{r}
+churn_rate_by_plan <- with(cellphone, tapply(churn, plan_chosen, function(x) mean(x == 1)))
+cat("Churn rate by plan:\n")
+print(churn_rate_by_plan)
+```
+
+```{r}
+churn_rate_by_plan_df <- as.data.frame(churn_rate_by_plan)
+churn_rate_by_plan_df$plan_chosen <- row.names(churn_rate_by_plan_df)
+
+ggplot(churn_rate_by_plan_df, aes(x = plan_chosen, y = churn_rate_by_plan, fill = plan_chosen)) +
+  geom_bar(stat = "identity", width = 0.7) +
+  theme_minimal() +
+  labs(title = "Churn Rate by Plan", x = "Plan", y = "Churn Rate") +
+  geom_text(aes(label = round(churn_rate_by_plan,3)), vjust = 1.4, color = "white") +
+  scale_fill_discrete(name = "Plan")
+```
+
+
+```{r}
+churn_rate_by_promo <- with(cellphone, tapply(churn, promo_lag1, function(x) mean(x == 1)))
+cat("Churn rate by promo_lag1:\n")
+print(churn_rate_by_promo)
+```
+
+```{r}
+churn_rate_by_promo_df <- as.data.frame(churn_rate_by_promo)
+churn_rate_by_promo_df$promo_lag1 <- row.names(churn_rate_by_promo_df)
+
+ggplot(churn_rate_by_promo_df, aes(x = promo_lag1, y = churn_rate_by_promo, fill = promo_lag1)) +
+  geom_bar(stat = "identity", width = 0.7) +
+  theme_minimal() +
+  labs(title = "Churn Rate by Promo Lag", x = "Promo Lag", y = "Churn Rate") +
+  geom_text(aes(label = round(churn_rate_by_promo,3)), vjust = 1.4, color = "white") +
+  scale_fill_discrete(name = "Promo Lag")
+```
+
+### Customer segmentation
+
+```{r}
+library(dplyr)
+
+data_scaled <- cellphone %>%
+  select(total_minute_peak, plan_chosen, promo_lag1) %>%
+  scale()
+```
+
+```{r}
+set.seed(123) # For reproducibility
+k <- 3 # Number of clusters
+kmeans_result <- kmeans(data_scaled, centers = k)
+```
+
+```{r}
+cellphone$cluster <- kmeans_result$cluster
+cluster_summary <- cellphone %>%
+  group_by(cluster) %>%
+  summarise(
+    count = n(),
+    avg_total_minute_peak = mean(total_minute_peak),
+    avg_churn = mean(churn),
+    avg_promo_lag1 = mean(promo_lag1),
+    plan1_prop = mean(plan1),
+    plan2_prop = mean(plan2),
+    plan3_prop = mean(plan3),
+    plan4_prop = mean(plan4)
+  )
+
+cat("Customer segmentation summary:\n")
+print(cluster_summary)
+```
+
+```{r}
+ggplot(cellphone, aes(x = total_minute_peak, y = plan_chosen, color = factor(cluster))) +
+  geom_point(alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Customer Segmentation", x = "Total Peak Minutes", y = "Plan Chosen", color = "Cluster")
+```
+
+### Detailed descriptive analysis
+
+a) How many customers are there for each type of phone service plan?
+
+```{r}
+customers_per_plan <- table(cellphone$plan_chosen)
+cat("Number of customers for each plan:\n")
+print(customers_per_plan)
+```
+b) What is the average number of customers acquired for each phone service plan across the months of August to December 2015?
+
+```{r}
+# Filter customers acquired between August and December 2015
+data_2015 <- cellphone %>% filter(bill_year == 2015 & bill_month >= 8 & bill_month <= 12)
+
+# Remove duplicate customer IDs and count unique customers per plan
+unique_customers_2015 <- data_2015 %>% distinct(cust_id, .keep_all = TRUE)
+customers_per_plan_2015 <- table(unique_customers_2015$plan_chosen)
+
+# Calculate the average number of customers acquired per plan
+avg_customers_per_plan_2015 <- customers_per_plan_2015 / 5
+cat("Average number of customers acquired for each plan (August to December 2015):\n")
+print(avg_customers_per_plan_2015)
+```
+
+c) What is the average number of months a customer stays with the cellular phone service company from the start till the end of a phone service subscription (i.e., only focus on customers who churned)?
+
+```{r}
+churned_customers <- cellphone %>% filter(churn == 1)
+churned_customers_months <- churned_customers %>% group_by(cust_id) %>% summarise(months_active = n())
+avg_months_churned <- mean(churned_customers_months$months_active)
+cat("Average number of months a churned customer stays with the company:", avg_months_churned, "\n")
+```
+
+d) For each type of phone service plan, what is the number of customers who churned?
+
+```{r}
+churned_by_plan <- table(churned_customers$plan_chosen)
+cat("Number of churned customers by plan:\n")
+print(churned_by_plan)
+```
+
+e) For each type of phone service plan, what is the average number of months a customer stays with the company from the start till the end of a service subscription (i.e., only focus on customers who churned)?
+
+```{r}
+avg_months_churned_by_plan <- churned_customers %>% group_by(plan_chosen) %>% summarise(avg_months_active = mean(n()))
+#cat("Average number of months churned customers stay with the company by plan:\n")
+print(avg_months_churned_by_plan)
+```
+
+f) What is the average number of peak minutes used in a month under each type of phone service plan?
+
+```{r}
+avg_peak_minutes_by_plan <- cellphone %>% group_by(plan_chosen) %>% summarise(avg_peak_minutes = mean(total_minute_peak))
+#cat("Average number of peak minutes used in a month by plan:\n")
+print(avg_peak_minutes_by_plan)
+```
+
+g) How many customers are over-utilizing their allocated maximum peak time minutes (by more than 5%) for each type of phone service plan?
+
+```{r}
+# Calculate maximum peak minutes allowed for each plan
+max_minutes <- c(200, 300, 350, 500)
+cellphone$max_peak_minutes <- max_minutes[cellphone$plan_chosen]
+
+# Identify customers who exceed their allocated maximum peak time minutes by more than 5%
+cellphone$over_utilizing <- cellphone$total_minute_peak > cellphone$max_peak_minutes * 1.05
+
+# Count the number of customers who over-utilize their allocated maximum peak time minutes for each plan
+over_utilizing_customers_by_plan <- cellphone %>% 
+  filter(over_utilizing == TRUE) %>% 
+  group_by(plan_chosen) %>% 
+  summarise(count = n())
+
+#cat("Number of customers over-utilizing their allocated maximum peak time minutes by plan:\n")
+print(over_utilizing_customers_by_plan)
+```
+
+h) What is the average total phone bill (fixed subscription charge plus variable excess usage fees) per customer across all months under each type of phone service plan?
+
+```{r}
+fixed_prices <- c(30, 35, 40, 50)
+excess_prices <- 0.40
+
+cellphone$fixed_charge <- fixed_prices[cellphone$plan_chosen]
+cellphone$excess_usage <- pmax(0, cellphone$total_minute_peak - cellphone$max_peak_minutes) * excess_prices
+cellphone$total_bill <- cellphone$fixed_charge + cellphone$excess_usage
+
+avg_total_bill_by_plan <- cellphone %>% 
+  group_by(plan_chosen) %>% 
+  summarise(avg_total_bill = mean(total_bill))
+
+#cat("Average total phone bill per customer across all months by plan:\n")
+print(avg_total_bill_by_plan)
+```
+
+i) What is the average profit per customer across all months under each type of phone service plan?
+
+```{r}
+profit_margin <- 0.53
+cellphone$profit <- cellphone$total_bill * profit_margin
+avg_profit_by_plan <- cellphone %>% 
+  group_by(plan_chosen) %>% 
+  summarise(avg_profit = mean(profit))
+
+#cat("Average profit per customer across all months by plan:\n")
+print(avg_profit_by_plan)
+```
+
+j) For customers who have churned, what is the average customer lifetime value under each type of phone service plan? Assume a monthly discount rate of 1% and compute the lifetime value as of the month of customer acquisition onward.
+
+```{r}
+monthly_discount_rate <- 0.01
+
+churned_customers <- cellphone %>% filter(churn == 1)
+churned_customers <- churned_customers %>% 
+  group_by(cust_id, plan_chosen) %>% 
+  summarise(
+  months_active = n(),
+  total_profit = sum(profit)
+)
+
+churned_customers$lifetime_value <- churned_customers$total_profit / ((1 - (1 + monthly_discount_rate)^(-churned_customers$months_active)) / monthly_discount_rate)
+
+avg_lifetime_value_by_plan <- churned_customers %>% 
+  group_by(plan_chosen) %>% 
+  summarise(avg_lifetime_value = mean(lifetime_value))
+
+#cat("Average customer lifetime value for churned customers by plan:\n")
+print(avg_lifetime_value_by_plan)
+```
+
+## Creating aggregated dataset using the 3 originally provided datasets
+
+```{r}
+# Aggregate the panel-level customer billing data into a cross-sectional one, keeping the last observation of each customer that records the churn status (churn):
+billing_data_cross_sectional <- cellphone %>% 
+  group_by(cust_id) %>% 
+  slice_tail(n = 1)
+
+# Compute average monthly peak minutes used for each customer (ave_minute_peak):
+average_minutes <- cellphone %>% 
+  group_by(cust_id) %>% 
+  summarise(ave_minute_peak = mean(total_minute_peak))
+billing_data_cross_sectional <- left_join(billing_data_cross_sectional, average_minutes, by = "cust_id")
+
+# Compute the percentage of months a customer received marketing promotions (promo_pct):
+promo_percentage <- cellphone %>% 
+  group_by(cust_id) %>% 
+  summarise(promo_pct = mean(promo_lag1))
+billing_data_cross_sectional <- left_join(billing_data_cross_sectional, promo_percentage, by = "cust_id")
+
+# Merge the cross-sectional billing data with the subscriber information data:
+merged_data <- left_join(billing_data_cross_sectional, subscriber, by = "cust_id")
+
+# Create the customer age variable (age):
+current_year <- 2017
+merged_data$age <- current_year - merged_data$birth_year
+
+# Further merge the data set created in Step 5 above with the ZIP code data:
+merged_data <- left_join(merged_data, zip, by = "zip_code")
+
+# Create the commercial ZIP code type dummy variable (zip_comm):
+merged_data$zip_comm <- ifelse(merged_data$zip_type == 2, 1, 0)
+
+merged_data
+```
+
+```{r}
+# Check dimensions of merged dataset
+dim(merged_data)
+```
+
+## Using logit and probit models on merged dataset
+
+(a) Estimate the binomial logit and probit models of customer churn decision:
+
+```{r}
+library(car)
+
+# Binomial Logit Model
+logit_model <- glm(churn ~ plan1 + plan2 + plan3 + plan4 + ave_minute_peak +
+                   promo_pct + age + newcell + ruca2 + zip_comm,
+                   family = binomial(link = "logit"), data = merged_data)
+
+# Binomial Probit Model
+probit_model <- glm(churn ~ plan1 + plan2 + plan3 + plan4 + ave_minute_peak +
+                    promo_pct + age + newcell + ruca2 + zip_comm,
+                    family = binomial(link = "probit"), data = merged_data)
+```
+
+```{r}
+# Create a dataframe with coefficients and model names
+coefs <- data.frame(
+  variable = names(logit_model$coefficients),
+  logit_coef = logit_model$coefficients,
+  probit_coef = probit_model$coefficients
+)
+
+coefs <- reshape2::melt(coefs, id.vars = "variable", variable.name = "model", value.name = "coefficient")
+
+# Plot coefficients
+ggplot(coefs, aes(x = variable, y = coefficient, fill = model)) +
+  geom_col(position = "dodge") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Logit and Probit Model Coefficients", x = "Variable", y = "Coefficient", fill = "Model")
+```
+
+(b) Compare the model fit using AIC and accuracy:
+
+```{r}
+library(caret)
+
+# Split data into training and testing sets
+set.seed(123)
+train_index <- createDataPartition(merged_data$churn, p = 0.8, list = FALSE)
+train_data <- merged_data[train_index, ]
+test_data <- merged_data[-train_index, ]
+
+# Fit the models on the training data
+logit_model <- glm(churn ~ plan1 + plan2 + plan3 + ave_minute_peak + promo_pct + age + newcell + ruca2 + zip_comm, data = train_data, family = binomial(link = "logit"))
+
+probit_model <- glm(churn ~ plan1 + plan2 + plan3 + ave_minute_peak + promo_pct + age + newcell + ruca2 + zip_comm, data = train_data, family = binomial(link = "probit"))
+
+# Predictions on the test data
+logit_pred <- ifelse(predict(logit_model, newdata = test_data, type = "response") > 0.5, 1, 0)
+probit_pred <- ifelse(predict(probit_model, newdata = test_data, type = "response") > 0.5, 1, 0)
+
+# Confusion matrices
+logit_conf_mat <- table(Predicted = as.factor(logit_pred), Actual = as.factor(test_data$churn))
+probit_conf_mat <- table(Predicted = as.factor(probit_pred), Actual = as.factor(test_data$churn))
+
+# Accuracy
+logit_accuracy <- sum(diag(logit_conf_mat)) / sum(logit_conf_mat)
+probit_accuracy <- sum(diag(probit_conf_mat)) / sum(probit_conf_mat)
+```
+
+```{r}
+# Create a dataframe with AIC and accuracy
+model_comparison <- data.frame(
+  model = c("Logit", "Probit"),
+  AIC = c(AIC(logit_model), AIC(probit_model)),
+  accuracy = c(logit_accuracy, probit_accuracy)
+)
+
+model_comparison
+```
+
+(c) Marginal effects of ave_minute_peak and promo_pct on the probability of customer churn:
+
+```{r}
+library(margins)
+
+# Calculate marginal effects for the best-fit model (e.g., logit_model)
+marginal_effects <- margins(logit_model, variables = c("ave_minute_peak", "promo_pct"))
+
+# Summary of marginal effects
+marginal_effects_summary <- summary(marginal_effects)
+marginal_effects_summary
+```
+
+```{r}
+# Plot marginal effects
+plot(marginal_effects)
+```
+
+(d) Multinomial logit model of customer plan choice decision:
+
+```{r}
+library(nnet)
+
+# Create a new variable for plan choice
+merged_data$plan_choice <- as.factor(ifelse(merged_data$plan1 == 1, 1, ifelse(merged_data$plan2 == 1, 2, ifelse(merged_data$plan3 == 1, 3, 4))))
+
+# Remove missing data (if any)
+merged_data_clean <- merged_data %>%
+  na.omit()
+
+multinom_model <- multinom(plan_choice ~ ave_minute_peak + promo_pct + age + newcell + ruca2 + zip_comm, data = merged_data_clean)
+
+```
+
+```{r}
+# Summary of the multinomial logit model
+multinom_summary <- summary(multinom_model)
+multinom_summary
+```
+
+
+```{r}
+# Prepare the coefficients data for visualization
+coefs <- coef(multinom_model)
+coefs <- as.data.frame(t(coefs))
+coefs$Variable <- row.names(coefs)
+coefs_long <- reshape2::melt(coefs, id.vars = "Variable", variable.name = "Plan", value.name = "Coefficient")
+
+# Visualize the coefficients
+ggplot(coefs_long, aes(x = Variable, y = Coefficient, fill = Plan)) +
+  geom_col(position = "dodge") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Multinomial Logit Model Coefficients", x = "Variable", y = "Coefficient", fill = "Plan")
+
+
+```
+
+## Model estimations for duration models
+
+(a) Plot the Kaplan-Meier survival function estimates for each plan choice on the same graph
+
+```{r}
+#install.packages("survival")
+library(survival)
+
+# Create a Surv object for survival analysis
+surv_obj <- Surv(time = merged_data$bill_month, event = merged_data$churn)
+
+# Compute the Kaplan-Meier survival function estimates for each plan choice
+km_estimates <- survfit(surv_obj ~ merged_data$plan_chosen)
+
+# Plot the Kaplan-Meier survival function estimates for each plan choice on the same graph
+plot(km_estimates, col = 1:4, xlab = "Months", ylab = "Survival Probability", main = "Kaplan-Meier Survival Function Estimates by Plan Choice")
+
+```
+
+(b) Estimate the Cox proportional hazard (PH) type duration data models using a semi-parametric approach.
+
+```{r}
+# Estimate the Cox PH model
+cox_ph_model <- coxph(surv_obj ~ plan_chosen + ave_minute_peak + promo_pct + age + newcell + ruca2 + zip_comm, data = merged_data)
+
+# Display the results
+summary(cox_ph_model)
+
+# Compute the AIC for the Cox PH model
+cox_ph_aic <- AIC(cox_ph_model)
+```
+
+```{r}
+cox_ph_aic
+```
+
+(c) Estimate the accelerated failure time (AFT) type duration data models using the exponential and Weibull distributions.
+
+```{r}
+# Estimate the AFT model with the exponential distribution
+aft_exp_model <- survreg(surv_obj ~ plan_chosen + ave_minute_peak + promo_pct + age + newcell + ruca2 + zip_comm, data = merged_data, dist = "exponential")
+
+# Display the results
+summary(aft_exp_model)
+
+# Compute the AIC for the AFT model with the exponential distribution
+aft_exp_aic <- AIC(aft_exp_model)
+
+# Estimate the AFT model with the Weibull distribution
+aft_weibull_model <- survreg(surv_obj ~ plan_chosen + ave_minute_peak + promo_pct + age + newcell + ruca2 + zip_comm, data = merged_data, dist = "weibull")
+
+# Display the results
+summary(aft_weibull_model)
+
+# Compute the AIC for the AFT model with the Weibull distribution
+aft_weibull_aic <- AIC(aft_weibull_model)
+```
+
+```{r}
+aft_weibull_aic
+```
+
+(d) Evaluate the estimated model fit and performance using the AIC measure.
+
+```{r}
+# Compare the AIC values
+cat("AIC values:\nCox PH model:", cox_ph_aic, "\nAFT Exponential model:", aft_exp_aic, "\nAFT Weibull model:", aft_weibull_aic, "\n")
+
+```
+
+(e) Interpret either the hazard ratio (for PH model) or time ratio (for AFT model) associated with plan2 to plan 4 dummies (relative to plan 1) and age on the probability of or time to churning.
+
+```{r}
+# Compute time ratios for the best model (AFT Weibull)
+time_ratios <- exp(coef(aft_weibull_model))
+time_ratios
+
+```
+
+```{r}
+# Compute 95% confidence intervals for time ratios
+conf_ints <- confint(aft_weibull_model, level = 0.95)
+ci_lower <- exp(conf_ints[, 1])
+ci_upper <- exp(conf_ints[, 2])
+
+# Combine time ratios and their confidence intervals
+time_ratios_ci <- data.frame(TimeRatio = time_ratios, LowerCI = ci_lower, UpperCI = ci_upper)
+time_ratios_ci
+```
+
+## Using random forest classifier to predict churn
+
+```{r}
+# Load the necessary library
+library(randomForest)
+
+merged_data_clean$churn <- as.factor(merged_data_clean$churn)
+
+# Split the data into training and test sets
+set.seed(123)
+trainIndex <- sample(1:nrow(merged_data_clean), round(0.7 * nrow(merged_data_clean)), replace = FALSE)
+trainData <- merged_data_clean[trainIndex, ]
+testData <- merged_data_clean[-trainIndex, ]
+
+# Train the model
+rf_model <- randomForest(churn ~., data = trainData, importance = TRUE)
+
+# Make predictions on the test set
+rf_pred <- predict(rf_model, testData)
+
+# Evaluate the model performance
+rf_cm <- table(Predicted = rf_pred, Actual = testData$churn)
+rf_accuracy <- sum(diag(rf_cm)) / sum(rf_cm)
+print(paste0("Random Forest Classifier Accuracy: ", round(rf_accuracy * 100, 2), "%"))
+
+```
+
+```{r}
+# Plot variable importance
+varImpPlot(rf_model)
+```
+
