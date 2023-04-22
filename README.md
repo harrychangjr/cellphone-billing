@@ -1,5 +1,5 @@
 # cellphone-billing
-Exploration of 3 datasets related to cellphone billing from past assignment on data-driven modelling
+Exploration of 3 datasets related to cellphone billing from past assignment on data-driven marketing
 
 Methods explored:
 - Descriptive statistics
